@@ -10,6 +10,10 @@ orbita:
     max-attempts: 3
     backoff-base: 20ms
     backoff-max: 100ms
+  reply-window:
+    poll-interval: 25ms
+    quiet-period: 300ms
+    max-wait: 1200ms
 spring:
   datasource:
     hikari:

@@ -33,3 +33,8 @@ orbita:
     backoff-max: 5m
   gateway:
     latency: 50ms
+  reply-window:
+    poll-interval: 200ms
+    # Assumption to validate with real conversations: how long people pause between messages.
+    quiet-period: 5s
+    max-wait: 20s

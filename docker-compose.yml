@@ -27,6 +27,9 @@ services:
       # Short leases so the crash demo does not wait 30 s for recovery.
       ORBITA_INBOUND_LEASE: 5s
       ORBITA_OUTBOUND_LEASE: 5s
+      # Shorter than the default so the demo does not wait 5 s per scenario.
+      ORBITA_REPLY_WINDOW_QUIET_PERIOD: 2s
+      ORBITA_REPLY_WINDOW_MAX_WAIT: 6s
     ports:
       - "8080:8080"
 

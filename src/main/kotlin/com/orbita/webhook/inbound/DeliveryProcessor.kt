@@ -1,6 +1,7 @@
 package com.orbita.webhook.inbound
 
-import com.orbita.webhook.outbound.OutboundRepository
+import com.orbita.webhook.config.OrbitaProperties
+import com.orbita.webhook.reply.ReplyWindowRepository
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -17,10 +18,13 @@ class DeliveryProcessor(
     private val mapper: ObjectMapper,
     private val jdbc: JdbcClient,
     private val deliveries: DeliveryRepository,
-    private val outbound: OutboundRepository,
+    private val windows: ReplyWindowRepository,
+    properties: OrbitaProperties,
 ) {
+    private val window = properties.replyWindow
+
     /**
-     * History row, automatic reply and queue status commit in one transaction. A crash anywhere
+     * History row, reply window and queue status commit in one transaction. A crash anywhere
      * in here rolls everything back and the delivery runs again, with nothing half-written.
      */
     @Transactional
@@ -55,13 +59,7 @@ class DeliveryProcessor(
             .param(Timestamp.from(Instant.ofEpochSecond(message.timestamp)))
             .update() == 1
         if (inserted) {
-            outbound.enqueue(
-                tenantId = tenantId,
-                idempotencyKey = "auto-reply:${message.id}",
-                priority = OutboundRepository.PRIORITY_REPLY,
-                toPhone = message.from,
-                body = AUTO_REPLY,
-            )
+            windows.openOrExtend(tenantId, message.from, window.quietPeriod, window.maxWait)
         }
         return inserted
     }
@@ -72,8 +70,4 @@ class DeliveryProcessor(
             .query { rs, _ -> rs.getString(1) }
             .optional()
             .orElseThrow { IllegalStateException("No tenant for phone_number_id $phoneNumberId") }
-
-    private companion object {
-        const val AUTO_REPLY = "Recebemos sua mensagem. Um atendente vai falar com você em breve."
-    }
 }

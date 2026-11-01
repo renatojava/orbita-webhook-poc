@@ -9,6 +9,7 @@ data class OrbitaProperties(
     val inbound: QueueProperties,
     val outbound: QueueProperties,
     val gateway: GatewayProperties,
+    val replyWindow: ReplyWindowProperties,
 ) {
     init {
         require(appSecret.isNotBlank()) { "orbita.app-secret must not be blank" }
@@ -24,3 +25,5 @@ data class QueueProperties(
 )
 
 data class GatewayProperties(val latency: Duration)
+
+data class ReplyWindowProperties(val quietPeriod: Duration, val maxWait: Duration)

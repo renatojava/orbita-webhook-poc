@@ -8,7 +8,9 @@ data class Reconciliation(
     val messages: Long,
     val duplicatesIgnored: Long,
     val outbound: Map<String, Long>,
-    val messagesWithoutReply: Long,
+    val messagesAwaitingWindow: Long,
+    val orphanMessages: Long,
+    val openWindows: Long,
     val deadLetters: Long,
     val uncertainSends: Long,
 )
@@ -41,14 +43,27 @@ class AdminRepository(private val jdbc: JdbcClient) {
             messages = count("SELECT count(*) FROM messages"),
             duplicatesIgnored = count("SELECT coalesce(sum(duplicate_messages), 0) FROM webhook_deliveries"),
             outbound = outbound,
-            messagesWithoutReply = count(
+            messagesAwaitingWindow = count(
                 """
                 SELECT count(*) FROM messages m
-                 WHERE NOT EXISTS (SELECT 1 FROM outbound_messages o
-                                    WHERE o.tenant_id = m.tenant_id
-                                      AND o.idempotency_key = 'auto-reply:' || m.wamid)
+                 WHERE m.reply_key IS NULL
+                   AND EXISTS (SELECT 1 FROM reply_windows w
+                                WHERE w.tenant_id = m.tenant_id AND w.contact_phone = m.from_phone)
                 """,
             ),
+            // Must always be zero: no reply, no window that will produce one, or a link to a reply that does not exist.
+            orphanMessages = count(
+                """
+                SELECT count(*) FROM messages m
+                 WHERE (m.reply_key IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM reply_windows w
+                                         WHERE w.tenant_id = m.tenant_id AND w.contact_phone = m.from_phone))
+                    OR (m.reply_key IS NOT NULL
+                        AND NOT EXISTS (SELECT 1 FROM outbound_messages o
+                                         WHERE o.tenant_id = m.tenant_id AND o.idempotency_key = m.reply_key))
+                """,
+            ),
+            openWindows = count("SELECT count(*) FROM reply_windows"),
             deadLetters = deliveries.getOrDefault("DEAD", 0) + outbound.getOrDefault("DEAD", 0),
             uncertainSends = outbound.getOrDefault("UNCERTAIN", 0),
         )

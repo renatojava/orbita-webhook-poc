@@ -52,7 +52,7 @@ abstract class IntegrationTestBase {
 
     @BeforeEach
     fun cleanState() {
-        jdbc.sql("TRUNCATE outbound_messages, messages, webhook_deliveries, tenants").update()
+        jdbc.sql("TRUNCATE reply_windows, outbound_messages, messages, webhook_deliveries, tenants").update()
         gateway.reset()
         createTenant(TENANT_A, PHONE_A)
         createTenant(TENANT_B, PHONE_B)
@@ -89,17 +89,18 @@ abstract class IntegrationTestBase {
         wamid: String,
         phoneNumberId: String = PHONE_A,
         body: String = "Oi, quero saber da formação de closer",
-    ): ByteArray = payloadWith(phoneNumberId, listOf(wamid), body)
+        from: String = "5511" + wamid.hashCode().toUInt(),
+    ): ByteArray = payloadWith(phoneNumberId, listOf(wamid), body, from)
 
-    protected fun payloadWith(phoneNumberId: String, wamids: List<String>, body: String = "Oi"): ByteArray {
+    protected fun payloadWith(phoneNumberId: String, wamids: List<String>, body: String = "Oi", from: String = "5511988887777"): ByteArray {
         val messages = wamids.joinToString(",") { wamid ->
-            """{"from":"5511988887777","id":"$wamid","timestamp":"1760364000","type":"text","text":{"body":"$body"}}"""
+            """{"from":"$from","id":"$wamid","timestamp":"1760364000","type":"text","text":{"body":"$body"}}"""
         }
         return """
             {"object":"whatsapp_business_account","entry":[{"id":"108800000000001","changes":[{"field":"messages","value":{
               "messaging_product":"whatsapp",
               "metadata":{"display_phone_number":"5511999990000","phone_number_id":"$phoneNumberId"},
-              "contacts":[{"profile":{"name":"Ana Souza"},"wa_id":"5511988887777"}],
+              "contacts":[{"profile":{"name":"Ana Souza"},"wa_id":"$from"}],
               "messages":[$messages]}}]}]}
         """.trimIndent().toByteArray()
     }

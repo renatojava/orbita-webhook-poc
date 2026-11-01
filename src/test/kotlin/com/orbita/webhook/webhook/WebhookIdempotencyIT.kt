@@ -52,10 +52,10 @@ class WebhookIdempotencyIT : IntegrationTestBase() {
     }
 
     @Test
-    fun `every message of a single webhook is recorded`() {
+    fun `every message of a single webhook is recorded and answered together`() {
         post(payloadWith(PHONE_A, listOf("wamid.M1", "wamid.M2", "wamid.M3")))
 
-        await().atMost(Duration.ofSeconds(5)).untilAsserted { assertThat(gateway.calls).hasSize(3) }
+        await().atMost(Duration.ofSeconds(5)).untilAsserted { assertThat(gateway.calls).hasSize(1) }
         assertThat(count("SELECT count(*) FROM messages")).isEqualTo(3)
     }
 

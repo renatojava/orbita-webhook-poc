@@ -3,6 +3,7 @@ package com.orbita.webhook.webhook
 import com.orbita.webhook.config.GatewayProperties
 import com.orbita.webhook.config.OrbitaProperties
 import com.orbita.webhook.config.QueueProperties
+import com.orbita.webhook.config.ReplyWindowProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Duration
@@ -10,7 +11,7 @@ import java.time.Duration
 class SignatureVerifierTest {
     private val queue = QueueProperties(1, Duration.ofSeconds(1), 1, Duration.ofSeconds(1), Duration.ofSeconds(1))
     private val verifier = SignatureVerifier(
-        OrbitaProperties("secret", queue, queue, GatewayProperties(Duration.ZERO)),
+        OrbitaProperties("secret", queue, queue, GatewayProperties(Duration.ZERO), ReplyWindowProperties(Duration.ZERO, Duration.ZERO)),
     )
 
     // Reference value computed outside the code: printf 'hello' | openssl dgst -sha256 -hmac secret

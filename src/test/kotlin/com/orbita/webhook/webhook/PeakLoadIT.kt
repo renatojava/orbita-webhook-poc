@@ -69,7 +69,7 @@ class PeakLoadIT : IntegrationTestBase() {
     private fun warmUp() {
         repeat(WARM_UP_REQUESTS) { post(payload("wamid.WARM-$it")) }
         await().atMost(Duration.ofSeconds(30)).untilAsserted { assertThat(gateway.calls).hasSize(WARM_UP_REQUESTS) }
-        jdbc.sql("TRUNCATE outbound_messages, messages, webhook_deliveries").update()
+        jdbc.sql("TRUNCATE reply_windows, outbound_messages, messages, webhook_deliveries").update()
         gateway.reset()
     }
 
