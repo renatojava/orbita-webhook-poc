@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orbita
+      POSTGRES_USER: orbita
+      POSTGRES_PASSWORD: orbita
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbita -d orbita"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/orbita
+      # Development-only value, used so the demo can sign its requests.
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-dev-only-secret}
+      # Short leases so the crash demo does not wait 30 s for recovery.
+      ORBITA_INBOUND_LEASE: 5s
+      ORBITA_OUTBOUND_LEASE: 5s
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

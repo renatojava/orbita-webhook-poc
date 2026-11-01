@@ -1,0 +1,20 @@
+orbita:
+  app-secret: test-app-secret
+  inbound:
+    poll-interval: 25ms
+    max-attempts: 3
+    backoff-base: 20ms
+    backoff-max: 100ms
+  outbound:
+    poll-interval: 25ms
+    max-attempts: 3
+    backoff-base: 20ms
+    backoff-max: 100ms
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 40
+logging:
+  level:
+    com.orbita: "OFF"
+    liquibase: WARN

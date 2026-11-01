@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: orbita-webhook-poc
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/orbita}
+    username: ${DATABASE_USER:orbita}
+    password: ${DATABASE_PASSWORD:orbita}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:30}
+      connection-timeout: 2000
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+orbita:
+  # No default on purpose: the app refuses to start without the Meta app secret.
+  app-secret: ${WHATSAPP_APP_SECRET}
+  inbound:
+    poll-interval: 100ms
+    batch-size: 50
+    lease: 30s
+    max-attempts: 5
+    backoff-base: 1s
+    backoff-max: 5m
+  outbound:
+    poll-interval: 100ms
+    batch-size: 100
+    lease: 30s
+    max-attempts: 5
+    backoff-base: 1s
+    backoff-max: 5m
+  gateway:
+    latency: 50ms
