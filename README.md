@@ -114,7 +114,7 @@ da Meta confirmaria esses casos sozinho.
 | Falha no meio de um lote | Nada gravado pela metade | `InboundFailureIT` |
 | Worker morto | Trabalho retomado quando o lease expira, com limite de tentativas | `InboundFailureIT` |
 | 3 pods dividindo 1.500 mensagens, com 1 pod derrubado no meio | Todos os pods trabalharam, 1.500 registros, 1.500 respostas, 0 duplicatas | `MultiPodIT` |
-| Limite de 30/s com 3 pods | 98 envios em ~3 s para um limite de 100: o limite é do cliente, não do pod | `MultiPodIT` |
+| Limite de 30/s com 3 pods | 98 a 99 envios em ~3 s para um limite de 100, em 4 execuções: o limite é do cliente, não do pod | `MultiPodIT` |
 | `kill -9` real em 1 de 3 pods, com tráfego pelo balanceador | 3.000 enviadas, 2.988 aceitas (o nginx desviou para os outros pods), **0 aceitas perdidas** | demo |
 | Campanha de 50/s com 3 pods | 501 envios em 10 s, divididos entre os 3 pods | demo |
 | Banco fora do ar | 503, e o reenvio é gravado uma vez | demo |
@@ -131,6 +131,10 @@ Também sabotei cópias do código para confirmar que os testes falham quando de
 `ON CONFLICT`, sem rate limit, sem isolamento entre clientes, com janela que não desliza, sem teto de espera
 e com duplicata adiando a janela, os testes correspondentes ficaram vermelhos. Sem a trava na linha do
 cliente, os 3 pods enviaram 261 e 277 mensagens para um limite de 100, e o `MultiPodIT` reprovou.
+
+**Sobre o `MultiPodIT`:** os 3 pods rodam na mesma JVM do teste e sobem um depois do outro, porque a
+inicialização do Spring Boot divide estado de log e diretório temporário dentro de um processo. Depois de
+subirem, rodam ao mesmo tempo. Pods de verdade, em processos separados, estão na demo com Docker.
 
 **Limites dessas medições:** rodaram em um notebook, com o gerador de carga na mesma JVM, o envio à Meta
 simulado e a janela de 300 ms do perfil de teste. A latência medida é a da resposta HTTP, não a da resposta ao lead. Isso indica que o desenho aguenta a carga, mas não é o teste

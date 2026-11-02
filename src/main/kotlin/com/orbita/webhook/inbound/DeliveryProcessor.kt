@@ -45,7 +45,7 @@ class DeliveryProcessor(
     }
 
     /** Returns false if this message was already recorded. ON CONFLICT makes the check atomic. */
-    private fun     store(tenantId: String, value: WebhookPayload.Value, message: WebhookPayload.Message): Boolean {
+    private fun store(tenantId: String, value: WebhookPayload.Value, message: WebhookPayload.Message): Boolean {
         val contactName = value.contacts.firstOrNull { it.waId == message.from }?.profile?.name
         val inserted = jdbc.sql(
             """

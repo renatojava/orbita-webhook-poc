@@ -41,12 +41,12 @@ class MultiPodIT {
     @BeforeEach
     fun startPods() {
         SharedSends.calls.clear()
-        // As in production: migrations run once, as their own step, then the pods start together.
+        // As in production: migrations run once, as their own step, before the pods.
         // Letting every pod migrate on boot fails on an empty database: Liquibase's own tables race.
         migrate()
-        pods += Executors.newVirtualThreadPerTaskExecutor().use { pool ->
-            (1..PODS).map { n -> pool.submit<ConfigurableApplicationContext> { startPod("pod-$n") } }.map { it.get() }
-        }
+        // Started one after the other: Spring Boot startup shares logging and temp-dir state inside one JVM.
+        // Real pods are separate processes; once up, these three run fully concurrently.
+        repeat(PODS) { n -> pods += startPod("pod-${n + 1}") }
         jdbc.sql("TRUNCATE reply_windows, outbound_messages, messages, webhook_deliveries, tenants").update()
     }
 
