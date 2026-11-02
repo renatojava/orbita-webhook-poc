@@ -1,5 +1,3 @@
---liquibase formatted sql
---changeset orbita:001-pipeline-schema
 -- A tenant is one WhatsApp number. The token bucket lives on the row, so every replica shares the same limit.
 CREATE TABLE tenants (
     id                   TEXT PRIMARY KEY,

@@ -21,4 +21,4 @@ spring:
 logging:
   level:
     com.orbita: "OFF"
-    liquibase: WARN
+    org.flywaydb: WARN

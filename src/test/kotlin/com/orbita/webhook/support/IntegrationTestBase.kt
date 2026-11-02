@@ -3,6 +3,7 @@ package com.orbita.webhook.support
 import com.orbita.testsupport.RecordingGatewayConfig
 import com.orbita.webhook.outbound.WhatsAppGateway
 import org.junit.jupiter.api.BeforeEach
+import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -43,10 +44,25 @@ abstract class IntegrationTestBase {
 
     @BeforeEach
     fun cleanState() {
-        jdbc.sql("TRUNCATE reply_windows, outbound_messages, messages, webhook_deliveries, tenants").update()
+        truncate("reply_windows, outbound_messages, messages, webhook_deliveries, tenants")
         gateway.reset()
         createTenant(TENANT_A, PHONE_A)
         createTenant(TENANT_B, PHONE_B)
+    }
+
+    /**
+     * The workers keep polling between tests, and TRUNCATE locks every table at once, so Postgres
+     * can pick it as a deadlock victim. Retrying is the right answer here: it only affects test cleanup.
+     */
+    protected fun truncate(tables: String) {
+        repeat(TRUNCATE_ATTEMPTS) { attempt ->
+            try {
+                jdbc.sql("TRUNCATE $tables").update()
+                return
+            } catch (e: PessimisticLockingFailureException) {
+                if (attempt == TRUNCATE_ATTEMPTS - 1) throw e
+            }
+        }
     }
 
     protected fun createTenant(id: String, phoneNumberId: String, rate: Double = 1000.0, burst: Int = 1000) {
@@ -97,6 +113,7 @@ abstract class IntegrationTestBase {
     }
 
     companion object {
+        const val TRUNCATE_ATTEMPTS = 5
         const val SECRET = "test-app-secret"
         const val TENANT_A = "tenant-a"
         const val TENANT_B = "tenant-b"

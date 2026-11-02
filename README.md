@@ -37,10 +37,13 @@ Meta ── POST ──────▶│      app1            app2            a
   e outro pod termina.
 - **Escalar é subir réplicas.** Nada muda no código. O limite real é a soma dos pools de conexão:
   N pods × pool tem de caber no `max_connections` do banco (com muitos pods, usar RDS Proxy ou PgBouncer).
-- **Migração é um passo separado.** Na primeira tentativa, deixei cada pod migrar ao subir. Com 3 pods
-  subindo juntos num banco vazio, o Liquibase falhou ao criar as próprias tabelas de controle.
-  Por isso o mesmo jar roda em modo migração (`--orbita.workers.enabled=false`, sem servidor web) antes
-  dos pods, e os pods sobem com `SPRING_LIQUIBASE_ENABLED=false`.
+- **Migração com Flyway, num passo separado.** O mesmo jar roda em modo migração
+  (`--orbita.workers.enabled=false`, sem servidor web) antes dos pods, e os pods sobem com
+  `SPRING_FLYWAY_ENABLED=false`. Comecei com Liquibase e, com 3 pods subindo juntos num banco vazio,
+  ele falhou ao criar as próprias tabelas de controle. O Flyway trava a migração com um advisory lock do
+  Postgres: testei 3 pods migrando ao mesmo tempo, 3 vezes, e em todas um migrou, os outros esperaram e
+  os 3 subiram. Mesmo assim, o passo separado continua sendo o padrão: a migração roda uma vez, falha
+  antes do rollout e não depende do tempo de boot de cada pod.
 - **Desligamento gracioso.** No SIGTERM de um rollout, o pod para de pegar trabalho e espera os envios
   em andamento (até 20 s).
 - **Única variável em memória:** `inFlight` no `OutboundDispatcher`, que evita que o mesmo pod sirva
@@ -95,6 +98,34 @@ Meta → POST /webhooks/whatsapp → valida HMAC → grava em webhook_deliveries
 | **Cada cliente com seu lote e sua thread virtual** | Campanha grande ou envio lento só atrasam o próprio cliente. Respostas passam à frente das campanhas | Nenhum relevante nesta escala |
 | **Pods sem estado, coordenados pelo Postgres** | Qualquer pod atende qualquer requisição e qualquer trabalho. Escalar ou matar um pod não exige nada além de subir ou derrubar a réplica | O banco vira o ponto central: precisa de alta disponibilidade (Multi-AZ) e de conexões dimensionadas |
 | **Kotlin** | É a linguagem que domino, e o desafio deixa livre | O produto é Node. Os mecanismos acima são SQL e valem em TypeScript, mas este código não entra direto lá |
+
+## E se a fila precisar sair do Postgres? (SQS)
+
+A PoC aguentou 500 msg/s no notebook, 20 vezes o pico previsto, então a troca não é para o evento.
+Se um dia for preciso, **o SQS substitui só o transporte** (`webhook_deliveries`). O estado continua
+no Postgres, porque o SQS não guarda estado consultável nem permite alterar uma mensagem já enfileirada.
+
+| Mecanismo | No Postgres hoje | No SQS |
+|---|---|---|
+| Lease | `locked_until` | Visibility timeout: a mensagem some enquanto um consumidor trabalha |
+| Backoff | `next_attempt_at` | `ChangeMessageVisibility` com o atraso calculado, antes de devolver |
+| Tentativas e DLQ | `attempts` contado ao pegar | `maxReceiveCount` + redrive para a DLQ, também contado ao receber |
+| Idempotência | `UNIQUE` + `ON CONFLICT` | **Continua no Postgres.** A deduplicação da fila FIFO só vale por 5 minutos |
+| Limite por cliente | Bucket na linha do cliente | **Continua no Postgres** (ou Redis). O SQS não limita por cliente |
+
+**A janela deslizante não cabe no SQS sozinho:** não dá para adiar uma mensagem que já está na fila.
+O padrão é a mensagem de checagem:
+
+1. Cada mensagem nova atualiza `due_at` da janela no Postgres, como hoje, e publica
+   `{cliente, contato}` com `DelaySeconds` igual à pausa.
+2. Quando a checagem chega, o consumidor compara com o banco. Se `due_at` ainda está no futuro, a
+   janela foi estendida e outra checagem já está a caminho, então ela é descartada. Se venceu, a janela fecha.
+3. O teto de 20 s já está no `due_at` (`LEAST`), então nada muda nele.
+
+Cuidados: `DelaySeconds` por mensagem só existe na fila **Standard**, não na FIFO, e vai até 15 minutos.
+A Standard entrega pelo menos uma vez e pode duplicar, o que não é problema aqui, porque fechar a janela
+já é idempotente (trava a linha da janela e apaga). Para prazos longos ou que mudam muito, o EventBridge
+Scheduler resolve, mas é mais uma peça para operar.
 
 ## O limite honesto: envio único não existe
 

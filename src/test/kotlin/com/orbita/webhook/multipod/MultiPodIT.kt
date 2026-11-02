@@ -42,7 +42,6 @@ class MultiPodIT {
     fun startPods() {
         SharedSends.calls.clear()
         // As in production: migrations run once, as their own step, before the pods.
-        // Letting every pod migrate on boot fails on an empty database: Liquibase's own tables race.
         migrate()
         // Started one after the other: Spring Boot startup shares logging and temp-dir state inside one JVM.
         // Real pods are separate processes; once up, these three run fully concurrently.
@@ -165,7 +164,7 @@ class MultiPodIT {
             .run(
                 *datasourceArgs(),
                 "--server.port=0",
-                "--spring.liquibase.enabled=false",
+                "--spring.flyway.enabled=false",
                 "--spring.datasource.hikari.maximum-pool-size=12",
                 "--orbita.instance-id=$name",
                 "--orbita.inbound.lease=2s",

@@ -13,7 +13,7 @@ x-app: &app
     # Development-only value, used so the demo can sign its requests.
     WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-dev-only-secret}
     # Migrations run once in the migrate service, never in the pods (see README).
-    SPRING_LIQUIBASE_ENABLED: "false"
+    SPRING_FLYWAY_ENABLED: "false"
     # Short leases so the crash demo does not wait 30 s for recovery.
     ORBITA_INBOUND_LEASE: 5s
     ORBITA_OUTBOUND_LEASE: 5s

@@ -19,8 +19,8 @@ spring:
     hikari:
       maximum-pool-size: ${DATABASE_POOL_SIZE:30}
       connection-timeout: 2000
-  liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.yaml
+  flyway:
+    locations: classpath:db/migration
 
 server:
   shutdown: graceful

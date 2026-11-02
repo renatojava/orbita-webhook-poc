@@ -1,5 +1,3 @@
---liquibase formatted sql
---changeset orbita:002-reply-windows
 -- One row per contact with an open grouping window; it is deleted when the window closes.
 -- Being a table, an open window survives a crash and still gets its reply after restart.
 CREATE TABLE reply_windows (
