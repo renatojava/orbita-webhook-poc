@@ -61,12 +61,13 @@ X-Hub-Signature-256: sha256=0000000000000000000000000000000000000000000000000000
 > {% client.test("recusada com 401", () => client.assert(response.status === 401, "status " + response.status)); %}
 
 ### 7. Número que não existe: aceita com 200, falha no worker e vai para a fila de falhas após N tentativas
+# O número ({{lateNumber}}) é novo a cada rodada do cenário, então dá para repetir 7 → 10 → 11 → 12.
 < ./sign-webhook.js
 POST {{host}}/webhooks/whatsapp
 Content-Type: application/json
 X-Hub-Signature-256: {{signature}}
 
-{"entry":[{"changes":[{"field":"messages","value":{"metadata":{"phone_number_id":"999999"},"messages":[{"from":"5511900000000","id":"{{wamid}}","timestamp":"1760364000","type":"text","text":{"body":"Oi"}}]}}]}]}
+{"entry":[{"changes":[{"field":"messages","value":{"metadata":{"phone_number_id":"{{lateNumber}}"},"messages":[{"from":"5511900000000","id":"{{wamid}}","timestamp":"1760364000","type":"text","text":{"body":"Oi"}}]}}]}]}
 
 > ./after-webhook.js
 
@@ -92,10 +93,16 @@ GET {{host}}/internal/dead-letters
 %}
 
 ### 11. Cadastrar o número que faltava (o do request 7)
-PUT {{host}}/internal/tenants/tenant-late
+PUT {{host}}/internal/tenants/late-{{lateNumber}}
 Content-Type: application/json
 
-{"phoneNumberId": "999999", "sendRatePerSecond": 10, "sendBurst": 10}
+{"phoneNumberId": "{{lateNumber}}", "sendRatePerSecond": 10, "sendBurst": 10}
+
+> {%
+    client.test("número cadastrado", () => client.assert(response.status === 204, "status " + response.status));
+    // Este número agora existe: a próxima rodada do request 7 precisa de outro, desconhecido.
+    client.global.set("lateNumber", "9" + Date.now());
+%}
 
 ### 12. Reprocessar a entrega que foi para a fila de falhas (usa o id pego no request 10)
 # Ordem: 7, espere ~15 s, 10, 11 e 12. Se o 11 rodar antes de a entrega chegar na fila de falhas,

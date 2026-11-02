@@ -6,6 +6,10 @@
 if (!client.global.get("wamid")) {
     client.global.set("wamid", "wamid.IDE-" + Date.now());
 }
+// Unknown number used by request 7. Request 11 registers it and picks a new one.
+if (!client.global.get("lateNumber")) {
+    client.global.set("lateNumber", "9" + Date.now());
+}
 const body = request.body.tryGetSubstituted();
 const signature = crypto.hmac.sha256()
     .withTextSecret(request.environment.get("appSecret"))
