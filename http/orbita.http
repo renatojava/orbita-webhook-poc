@@ -69,7 +69,12 @@ X-Hub-Signature-256: {{signature}}
 
 {"entry":[{"changes":[{"field":"messages","value":{"metadata":{"phone_number_id":"{{lateNumber}}"},"messages":[{"from":"5511900000000","id":"{{wamid}}","timestamp":"1760364000","type":"text","text":{"body":"Oi"}}]}}]}]}
 
-> ./after-webhook.js
+> {%
+    client.test("aceita com 200", () => client.assert(response.status === 200, "status " + response.status));
+    client.global.set("wamid", "wamid.IDE-" + Date.now() + "-" + Math.floor(Math.random() * 1e9));
+    // O request 10 espera a partir daqui: 5 tentativas com backoff de 1 + 2 + 4 + 8 s, no pior caso 15 s.
+    client.global.set("deadScenarioStartedAt", String(Date.now()));
+%}
 
 ### 8. Campanha de 1.000 mensagens do cliente A (sai a 10/s, sem atrasar o cliente B)
 POST {{host}}/internal/tenants/tenant-a/campaigns
@@ -84,7 +89,14 @@ GET {{host}}/internal/reconciliation
 
 > {% client.test("nenhuma mensagem órfã", () => client.assert(response.body.orphanMessages === 0, JSON.stringify(response.body))); %}
 
-### 10. Fila de falhas (DEAD) e envios incertos (UNCERTAIN). O request 7 leva uns 15 s para chegar aqui
+### 10. Fila de falhas (DEAD) e envios incertos (UNCERTAIN)
+# Se o 7 rodou há menos de 20 s, este request espera o restante antes de consultar: a entrega dele
+# só vai para a fila de falhas depois das 5 tentativas. Assim "Run all" funciona sem espera manual.
+< {%
+    const startedAt = Number(client.global.get("deadScenarioStartedAt") || 0);
+    const readyAt = startedAt + 20000;
+    while (Date.now() < readyAt) { /* o cliente HTTP do IntelliJ não tem sleep */ }
+%}
 GET {{host}}/internal/dead-letters
 
 > {%
@@ -105,14 +117,14 @@ Content-Type: application/json
 %}
 
 ### 12. Reprocessar a entrega que foi para a fila de falhas (usa o id pego no request 10)
-# Ordem: 7, espere ~15 s, 10, 11 e 12. Se o 11 rodar antes de a entrega chegar na fila de falhas,
-# o próprio retry já resolve, e não sobra nada para reprocessar.
+# Ordem: 7, 10, 11 e 12 (o 10 já espera o tempo necessário). Se o 11 rodar antes do 10, o próprio
+# retry resolve a entrega, e não sobra nada na fila de falhas para reprocessar.
 POST {{host}}/internal/dead-letters/deliveries/{{deadDeliveryId}}/replay
 
 > {%
     client.test("reprocessamento aceito", () => client.assert(
         response.status === 204,
         client.global.get("deadDeliveryId") === "nenhuma"
-            ? "não havia entrega na fila de falhas: rode o 7, espere ~15 s e rode o 10"
+            ? "não havia entrega na fila de falhas: rode o 7 e depois o 10 (ele espera sozinho)"
             : "status " + response.status));
 %}
