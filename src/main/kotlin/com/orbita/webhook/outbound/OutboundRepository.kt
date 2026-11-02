@@ -42,6 +42,8 @@ class OutboundRepository(private val jdbc: JdbcClient) {
     /**
      * Refills the tenant's token bucket and claims at most that many messages, in one transaction.
      * The row lock serializes pods, so the limit is per tenant, not per pod: 3 pods do not mean 3x the rate.
+     * NO KEY UPDATE, not UPDATE: it still serializes pods on the bucket, but does not block inserts
+     * of messages and replies, whose foreign key to tenants only needs a KEY SHARE lock.
      */
     @Transactional
     fun claimWithinRateLimit(tenantId: String, batchSize: Int, lease: Duration, workerId: String): List<OutboundMessage> {
@@ -49,7 +51,7 @@ class OutboundRepository(private val jdbc: JdbcClient) {
             """
             SELECT LEAST(send_burst, tokens + send_rate_per_second
                          * GREATEST(0, EXTRACT(EPOCH FROM now() - tokens_refilled_at)))
-              FROM tenants WHERE id = ? FOR UPDATE
+              FROM tenants WHERE id = ? FOR NO KEY UPDATE
             """,
         ).param(tenantId).query { rs, _ -> rs.getDouble(1) }.single()
 

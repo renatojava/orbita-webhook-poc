@@ -47,7 +47,6 @@ class MultiPodIT {
         // Started one after the other: Spring Boot startup shares logging and temp-dir state inside one JVM.
         // Real pods are separate processes; once up, these three run fully concurrently.
         repeat(PODS) { n -> pods += startPod("pod-${n + 1}") }
-        jdbc.sql("TRUNCATE reply_windows, outbound_messages, messages, webhook_deliveries, tenants").update()
     }
 
     @AfterEach
@@ -134,7 +133,10 @@ class MultiPodIT {
         return false
     }
 
-    /** Same jar, migration mode: no web server, no workers. It applies the changelog and exits. */
+    /**
+     * Same jar, migration mode: no web server, no workers. It applies the changelog and exits.
+     * Cleaning here, before any pod runs, matters: TRUNCATE while workers poll deadlocks with them.
+     */
     private fun migrate() {
         SpringApplicationBuilder(Application::class.java, PodGatewayConfig::class.java)
             .profiles("test")
@@ -144,7 +146,11 @@ class MultiPodIT {
                 "--orbita.workers.enabled=false",
                 "--test.pod-name=migration",
             )
-            .close()
+            .use { context ->
+                context.getBean(JdbcClient::class.java)
+                    .sql("TRUNCATE reply_windows, outbound_messages, messages, webhook_deliveries, tenants")
+                    .update()
+            }
     }
 
     private fun datasourceArgs() = arrayOf(

@@ -60,7 +60,7 @@ porque com vários pods só o banco consegue decidir quem chegou primeiro.
 | Fila | Dois pods nunca pegam a mesma entrega ao mesmo tempo | `FOR UPDATE SKIP LOCKED` em `DeliveryRepository.kt:28` |
 | Pod que perdeu o lease | Não sobrescreve o resultado de quem retomou o trabalho | `attempts = ?` (fencing) em `DeliveryRepository.kt:61` |
 | Envio para a Meta | Resultado incerto não é reenviado | `flagExpiredSendsAsUncertain` em `OutboundRepository.kt:91` |
-| Limite de envio | O limite vale para o cliente, somando todos os pods | `FOR UPDATE` na linha do cliente em `OutboundRepository.kt:52` |
+| Limite de envio | O limite vale para o cliente, somando todos os pods | `FOR NO KEY UPDATE` na linha do cliente em `OutboundRepository.kt:52` |
 
 As 3 primeiras camadas rodam na mesma transação, junto com o status da entrega.
 
