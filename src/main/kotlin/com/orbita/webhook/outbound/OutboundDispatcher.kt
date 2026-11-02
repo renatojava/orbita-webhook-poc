@@ -9,11 +9,14 @@ import org.springframework.stereotype.Component
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Each tenant is served on its own virtual thread and has at most one batch in flight per pod.
  * A tenant with a huge campaign or a slow send only ever waits on itself.
- * inFlight is only a local shortcut; correctness across pods comes from row locks in Postgres.
+ *
+ * Several pods may serve the same tenant at the same time, and that is fine: SKIP LOCKED gives each
+ * message to one pod only, and the send limit is a row in Postgres shared by every pod.
  */
 @Component
 class OutboundDispatcher(
@@ -25,7 +28,11 @@ class OutboundDispatcher(
     private val config = properties.outbound
     private val workerId = properties.instanceId
     private val executor = Executors.newVirtualThreadPerTaskExecutor()
-    private val inFlight = ConcurrentHashMap.newKeySet<String>()
+    /**
+     * Local to this pod, on purpose. It only stops this pod from opening a second batch for a tenant whose
+     * first batch is still running. It coordinates nothing between pods and nothing relies on it for that.
+     */
+    private val servingLocally = ConcurrentHashMap.newKeySet<String>()
 
     @Scheduled(fixedDelayString = "\${orbita.outbound.poll-interval}")
     fun dispatch() {
@@ -33,8 +40,15 @@ class OutboundDispatcher(
             if (flagged > 0) log.error("{} outbound messages flagged UNCERTAIN: lease expired while sending", flagged)
         }
         outbound.tenantsWithPendingWork()
-            .filter(inFlight::add)
-            .forEach { tenantId -> executor.submit { serve(tenantId) } }
+            .filter(servingLocally::add)
+            .forEach { tenantId ->
+                try {
+                    executor.submit { serve(tenantId) }
+                } catch (e: RejectedExecutionException) {
+                    // Shutting down: release the mark, or this pod would skip the tenant for good.
+                    servingLocally.remove(tenantId)
+                }
+            }
     }
 
     private fun serve(tenantId: String) {
@@ -44,7 +58,7 @@ class OutboundDispatcher(
         } catch (e: Exception) {
             log.error("Dispatch failed for tenant {}", tenantId, e)
         } finally {
-            inFlight.remove(tenantId)
+            servingLocally.remove(tenantId)
         }
     }
 

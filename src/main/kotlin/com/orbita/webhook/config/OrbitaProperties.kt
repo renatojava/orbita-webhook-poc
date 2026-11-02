@@ -14,7 +14,10 @@ data class OrbitaProperties(
     val instanceId: String = "local",
 ) {
     init {
-        require(appSecret.isNotBlank()) { "orbita.app-secret must not be blank" }
+        require(appSecret.isNotBlank()) { "orbita.app-secret must not be blank: set WHATSAPP_APP_SECRET" }
+        require(!appSecret.startsWith("\${")) {
+            "orbita.app-secret is an unresolved placeholder: set WHATSAPP_APP_SECRET"
+        }
     }
 }
 

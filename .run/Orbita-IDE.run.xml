@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Orbita (IDE, porta 8081)" type="JetRunConfigurationType">
+    <envs>
+      <env name="WHATSAPP_APP_SECRET" value="dev-only-secret" />
+      <env name="SERVER_PORT" value="8081" />
+    </envs>
+    <option name="MAIN_CLASS_NAME" value="com.orbita.webhook.ApplicationKt" />
+    <module name="orbita-webhook-poc" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

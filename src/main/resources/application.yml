@@ -27,8 +27,10 @@ server:
 
 orbita:
   instance-id: ${HOSTNAME:local}
-  # No default on purpose: the app refuses to start without the Meta app secret.
-  app-secret: ${WHATSAPP_APP_SECRET}
+  # Empty when the variable is missing, so OrbitaProperties refuses to start.
+  # Without the ":" Spring would keep the literal "${WHATSAPP_APP_SECRET}" as the secret: anyone reading this
+  # file could sign valid webhooks.
+  app-secret: ${WHATSAPP_APP_SECRET:}
   inbound:
     poll-interval: 100ms
     batch-size: 50

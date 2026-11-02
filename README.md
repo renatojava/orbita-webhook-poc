@@ -8,10 +8,19 @@ e 2 (fila que trava e mensagens sem registro).
 Precisa só de Docker. Para rodar os testes, também Java 25.
 
 ```bash
-./mvnw verify          # 40 testes, 36 deles com Postgres real (Testcontainers) e HTTP real
+./mvnw verify          # 44 testes, 37 deles com Postgres real (Testcontainers) e HTTP real
 ./scripts/demo.sh      # sobe 3 pods + balanceador e executa a demo, incluindo kill -9 em um pod
 docker compose down -v # limpa o ambiente
 ```
+
+Para rodar pela IDE:
+
+1. `docker compose up -d postgres`
+2. Rode a configuração **Orbita (IDE, porta 8081)**, já pronta em `.run/` (classe `com.orbita.webhook.ApplicationKt`,
+   com `WHATSAPP_APP_SECRET=dev-only-secret` e `SERVER_PORT=8081`). A app aplica as migrações do Flyway ao subir.
+3. Abra `http/orbita.http`, escolha o ambiente `ide` e execute os requests. A assinatura é calculada sozinha.
+
+Sem `WHATSAPP_APP_SECRET` a aplicação se recusa a subir. O valor `dev-only-secret` é só para desenvolvimento.
 
 Para subir sem a demo: `docker compose up --build`. O balanceador fica em `localhost:8080`
 (porta ocupada? `ORBITA_PORT=18080 ./scripts/demo.sh`).
@@ -46,8 +55,10 @@ Meta ── POST ──────▶│      app1            app2            a
   antes do rollout e não depende do tempo de boot de cada pod.
 - **Desligamento gracioso.** No SIGTERM de um rollout, o pod para de pegar trabalho e espera os envios
   em andamento (até 20 s).
-- **Única variável em memória:** `inFlight` no `OutboundDispatcher`, que evita que o mesmo pod sirva
-  o mesmo cliente duas vezes ao mesmo tempo. É só um atalho local. A correção vem das travas no banco.
+- **Única variável em memória:** `servingLocally` no `OutboundDispatcher`. Ela só impede que o mesmo pod
+  abra um segundo lote de um cliente enquanto o primeiro não terminou. Dois pods diferentes podem atender
+  o mesmo cliente ao mesmo tempo, e isso é seguro: `SKIP LOCKED` dá cada mensagem a um pod só, e o limite
+  de envio é uma linha no Postgres, compartilhada por todos.
 
 ## Onde está a idempotência
 
@@ -56,14 +67,14 @@ porque com vários pods só o banco consegue decidir quem chegou primeiro.
 
 | Camada | O que garante | Onde |
 |---|---|---|
-| Histórico | O mesmo `id` de mensagem vira um único registro, mesmo com 50 reenvios simultâneos | `UNIQUE (tenant_id, wamid)` em `001-pipeline-schema.sql:43` + `ON CONFLICT DO NOTHING` em `DeliveryProcessor.kt:54` |
+| Histórico | O mesmo `id` de mensagem vira um único registro, mesmo com 50 reenvios simultâneos | `UNIQUE (tenant_id, wamid)` em `V1__pipeline_schema.sql:43` + `ON CONFLICT DO NOTHING` em `DeliveryProcessor.kt:54` |
 | Efeito colateral | Só mensagem nova abre ou estende a janela de resposta. Duplicata não faz nada | `if (inserted)` em `DeliveryProcessor.kt:61` |
-| Resposta automática | Uma resposta por lote de mensagens, nunca duas | Chave `auto-reply:<wamid>` em `ReplyWindowCloser.kt:23` + `UNIQUE (tenant_id, idempotency_key)` em `001-pipeline-schema.sql:64` + `ON CONFLICT` em `OutboundRepository.kt:18` |
+| Resposta automática | Uma resposta por lote de mensagens, nunca duas | Chave `auto-reply:<wamid>` em `ReplyWindowCloser.kt:23` + `UNIQUE (tenant_id, idempotency_key)` em `V1__pipeline_schema.sql:64` + `ON CONFLICT` em `OutboundRepository.kt:18` |
 | Vínculo mensagem → resposta | Cada mensagem pertence a uma única resposta | `messages.reply_key`, gravado em `ReplyWindowRepository.kt:53` |
-| Fila | Dois pods nunca pegam a mesma entrega ao mesmo tempo | `FOR UPDATE SKIP LOCKED` em `DeliveryRepository.kt:28` |
-| Pod que perdeu o lease | Não sobrescreve o resultado de quem retomou o trabalho | `attempts = ?` (fencing) em `DeliveryRepository.kt:61` |
-| Envio para a Meta | Resultado incerto não é reenviado | `flagExpiredSendsAsUncertain` em `OutboundRepository.kt:91` |
-| Limite de envio | O limite vale para o cliente, somando todos os pods | `FOR NO KEY UPDATE` na linha do cliente em `OutboundRepository.kt:52` |
+| Fila | Dois pods nunca pegam a mesma entrega ao mesmo tempo | `FOR UPDATE SKIP LOCKED` em `DeliveryRepository.kt:30` |
+| Pod que perdeu o lease | Não sobrescreve o resultado de quem retomou o trabalho | `attempts = ?` (fencing) em `DeliveryRepository.kt:64` |
+| Envio para a Meta | Resultado incerto não é reenviado | `flagExpiredSendsAsUncertain` em `OutboundRepository.kt:93` |
+| Limite de envio | O limite vale para o cliente, somando todos os pods | `FOR NO KEY UPDATE` na linha do cliente em `OutboundRepository.kt:54` |
 
 As 3 primeiras camadas rodam na mesma transação, junto com o status da entrega.
 

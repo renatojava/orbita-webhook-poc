@@ -22,7 +22,7 @@ class InboundWorker(
             if (buried > 0) log.error("{} deliveries moved to dead letter after losing their last lease", buried)
         }
         do {
-            val batch = deliveries.claim(config.batchSize, config.lease, workerId)
+            val batch = deliveries.claim(config.batchSize, config.lease, workerId, config.maxAttempts)
             batch.forEach(::handle)
         } while (batch.size == config.batchSize)
     }

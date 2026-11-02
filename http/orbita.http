@@ -1,0 +1,111 @@
+# Requests prontos para o IntelliJ (HTTP Client).
+# 1. docker compose up -d postgres
+# 2. Rode a configuração "Orbita (IDE, porta 8081)" e escolha o ambiente "ide" no topo deste arquivo.
+#    Com a stack inteira (./scripts/demo.sh ou docker compose up), use o ambiente "compose".
+# A assinatura X-Hub-Signature-256 é calculada pelo sign-webhook.js: pode editar o corpo à vontade.
+# O id das mensagens ({{wamid}}) muda sozinho depois de cada envio (after-webhook.js).
+
+### 1. Cadastrar o cliente A (um número de WhatsApp, até 10 envios/s)
+PUT {{host}}/internal/tenants/tenant-a
+Content-Type: application/json
+
+{"phoneNumberId": "{{phoneA}}", "sendRatePerSecond": 10, "sendBurst": 10}
+
+> {% client.test("cliente A cadastrado", () => client.assert(response.status === 204, "status " + response.status)); %}
+
+### 2. Cadastrar o cliente B
+PUT {{host}}/internal/tenants/tenant-b
+Content-Type: application/json
+
+{"phoneNumberId": "{{phoneB}}", "sendRatePerSecond": 50, "sendBurst": 50}
+
+> {% client.test("cliente B cadastrado", () => client.assert(response.status === 204, "status " + response.status)); %}
+
+### 3. Mensagem nova (id novo a cada execução)
+< ./sign-webhook.js
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+X-Hub-Signature-256: {{signature}}
+
+{"object":"whatsapp_business_account","entry":[{"id":"108800000000001","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"5511999990000","phone_number_id":"{{phoneA}}"},"contacts":[{"profile":{"name":"Ana Souza"},"wa_id":"5511988887777"}],"messages":[{"from":"5511988887777","id":"{{wamid}}","timestamp":"1760364000","type":"text","text":{"body":"Oi, quero saber da formação de closer"}}]}}]}]}
+
+> ./after-webhook.js
+
+### 4. Reenvio da Meta: id fixo. Execute várias vezes: 1 registro, 1 resposta, o resto vira duplicata
+< ./sign-webhook.js
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+X-Hub-Signature-256: {{signature}}
+
+{"object":"whatsapp_business_account","entry":[{"id":"108800000000001","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"display_phone_number":"5511999990000","phone_number_id":"{{phoneA}}"},"contacts":[{"profile":{"name":"Ana Souza"},"wa_id":"5511988887777"}],"messages":[{"from":"5511988887777","id":"wamid.ORBITA-TESTE-0001","timestamp":"1760364000","type":"text","text":{"body":"Oi, quero saber da formação de closer"}}]}}]}]}
+
+> {% client.test("aceita com 200", () => client.assert(response.status === 200, "status " + response.status)); %}
+
+### 5. Mesma pessoa, 3 mensagens em 1 webhook: viram 1 resposta só (janela de agrupamento)
+< ./sign-webhook.js
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+X-Hub-Signature-256: {{signature}}
+
+{"object":"whatsapp_business_account","entry":[{"id":"108800000000001","changes":[{"field":"messages","value":{"messaging_product":"whatsapp","metadata":{"phone_number_id":"{{phoneA}}"},"contacts":[{"profile":{"name":"Bruno"},"wa_id":"5511977776666"}],"messages":[{"from":"5511977776666","id":"{{wamid}}-1","timestamp":"1760364000","type":"text","text":{"body":"Oi"}},{"from":"5511977776666","id":"{{wamid}}-2","timestamp":"1760364001","type":"text","text":{"body":"quero saber"}},{"from":"5511977776666","id":"{{wamid}}-3","timestamp":"1760364002","type":"text","text":{"body":"da formação"}}]}}]}]}
+
+> ./after-webhook.js
+
+### 6. Assinatura errada: 401 e nada é enfileirado
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+X-Hub-Signature-256: sha256=0000000000000000000000000000000000000000000000000000000000000000
+
+{"entry": []}
+
+> {% client.test("recusada com 401", () => client.assert(response.status === 401, "status " + response.status)); %}
+
+### 7. Número que não existe: aceita com 200, falha no worker e vai para a fila de falhas após N tentativas
+< ./sign-webhook.js
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+X-Hub-Signature-256: {{signature}}
+
+{"entry":[{"changes":[{"field":"messages","value":{"metadata":{"phone_number_id":"999999"},"messages":[{"from":"5511900000000","id":"{{wamid}}","timestamp":"1760364000","type":"text","text":{"body":"Oi"}}]}}]}]}
+
+> ./after-webhook.js
+
+### 8. Campanha de 1.000 mensagens do cliente A (sai a 10/s, sem atrasar o cliente B)
+POST {{host}}/internal/tenants/tenant-a/campaigns
+Content-Type: application/json
+
+{"campaignId": "campanha-{{$random.uuid}}", "count": 1000, "body": "Promoção da Semana"}
+
+> {% client.test("campanha enfileirada", () => client.assert(response.body.enqueued === 1000, JSON.stringify(response.body))); %}
+
+### 9. Reconciliação: tudo o que entrou, por status e por pod
+GET {{host}}/internal/reconciliation
+
+> {% client.test("nenhuma mensagem órfã", () => client.assert(response.body.orphanMessages === 0, JSON.stringify(response.body))); %}
+
+### 10. Fila de falhas (DEAD) e envios incertos (UNCERTAIN). O request 7 leva uns 15 s para chegar aqui
+GET {{host}}/internal/dead-letters
+
+> {%
+    const delivery = response.body.find(item => item.source === "delivery");
+    client.global.set("deadDeliveryId", delivery ? String(delivery.id) : "nenhuma");
+%}
+
+### 11. Cadastrar o número que faltava (o do request 7)
+PUT {{host}}/internal/tenants/tenant-late
+Content-Type: application/json
+
+{"phoneNumberId": "999999", "sendRatePerSecond": 10, "sendBurst": 10}
+
+### 12. Reprocessar a entrega que foi para a fila de falhas (usa o id pego no request 10)
+# Ordem: 7, espere ~15 s, 10, 11 e 12. Se o 11 rodar antes de a entrega chegar na fila de falhas,
+# o próprio retry já resolve, e não sobra nada para reprocessar.
+POST {{host}}/internal/dead-letters/deliveries/{{deadDeliveryId}}/replay
+
+> {%
+    client.test("reprocessamento aceito", () => client.assert(
+        response.status === 204,
+        client.global.get("deadDeliveryId") === "nenhuma"
+            ? "não havia entrega na fila de falhas: rode o 7, espere ~15 s e rode o 10"
+            : "status " + response.status));
+%}

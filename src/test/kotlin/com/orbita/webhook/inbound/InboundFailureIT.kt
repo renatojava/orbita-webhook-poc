@@ -96,12 +96,19 @@ class InboundFailureIT : IntegrationTestBase() {
         val claimed = Executors.newVirtualThreadPerTaskExecutor().use { pool ->
             (1..8).map {
                 pool.submit<List<Long>> {
-                    (1..5).flatMap { deliveries.claim(10, Duration.ofMinutes(5), "test").map(Delivery::id) }
+                    (1..5).flatMap { deliveries.claim(10, Duration.ofMinutes(5), "test", 5).map(Delivery::id) }
                 }
             }.flatMap { it.get() }
         }
 
         assertThat(claimed).isNotEmpty().doesNotHaveDuplicates()
+    }
+
+    @Test
+    fun `a delivery that used its last attempt is never claimed again, even before it is buried`() {
+        insertAbandonedDelivery(payload("wamid.EXHAUSTED"), attempts = 3)
+
+        assertThat(deliveries.claim(10, Duration.ofMinutes(5), "test", maxAttempts = 3)).isEmpty()
     }
 
     private fun insertAbandonedDelivery(body: ByteArray, attempts: Int) {

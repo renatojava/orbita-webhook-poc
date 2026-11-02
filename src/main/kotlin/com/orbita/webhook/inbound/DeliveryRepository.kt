@@ -15,8 +15,10 @@ class DeliveryRepository(private val jdbc: JdbcClient) {
      * Attempts are counted here, at claim time, not on failure. A message that kills the process
      * never reaches the failure path, so counting later would let it crash-loop forever.
      * SKIP LOCKED lets any number of workers or replicas claim without overlapping.
+     * An expired lease is only reclaimed while attempts remain: otherwise a lease expiring between
+     * buryExhaustedLeases and this claim would run the delivery one time past the limit.
      */
-    fun claim(batchSize: Int, lease: Duration, workerId: String): List<Delivery> =
+    fun claim(batchSize: Int, lease: Duration, workerId: String, maxAttempts: Int): List<Delivery> =
         jdbc.sql(
             """
             UPDATE webhook_deliveries d
@@ -24,7 +26,7 @@ class DeliveryRepository(private val jdbc: JdbcClient) {
                    locked_until = now() + (? * interval '1 millisecond')
               FROM (SELECT id FROM webhook_deliveries
                      WHERE (status = 'PENDING' AND next_attempt_at <= now())
-                        OR (status = 'PROCESSING' AND locked_until < now())
+                        OR (status = 'PROCESSING' AND locked_until < now() AND attempts < ?)
                      ORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED) c
              WHERE d.id = c.id
             RETURNING d.id, d.raw_body, d.attempts
@@ -32,6 +34,7 @@ class DeliveryRepository(private val jdbc: JdbcClient) {
         )
             .param(workerId)
             .param(lease.toMillis())
+            .param(maxAttempts)
             .param(batchSize)
             .query { rs, _ -> Delivery(rs.getLong("id"), rs.getBytes("raw_body"), rs.getInt("attempts")) }
             .list()
