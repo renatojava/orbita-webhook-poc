@@ -41,10 +41,10 @@ class OutboundRepository(private val jdbc: JdbcClient) {
 
     /**
      * Refills the tenant's token bucket and claims at most that many messages, in one transaction.
-     * The row lock serializes replicas, so the limit holds no matter how many are running.
+     * The row lock serializes pods, so the limit is per tenant, not per pod: 3 pods do not mean 3x the rate.
      */
     @Transactional
-    fun claimWithinRateLimit(tenantId: String, batchSize: Int, lease: Duration): List<OutboundMessage> {
+    fun claimWithinRateLimit(tenantId: String, batchSize: Int, lease: Duration, workerId: String): List<OutboundMessage> {
         val available = jdbc.sql(
             """
             SELECT LEAST(send_burst, tokens + send_rate_per_second
@@ -56,7 +56,7 @@ class OutboundRepository(private val jdbc: JdbcClient) {
         val claimed = jdbc.sql(
             """
             UPDATE outbound_messages o
-               SET status = 'SENDING', attempts = o.attempts + 1,
+               SET status = 'SENDING', attempts = o.attempts + 1, worker_id = ?,
                    locked_until = now() + (? * interval '1 millisecond')
               FROM (SELECT id FROM outbound_messages
                      WHERE tenant_id = ? AND status = 'PENDING' AND next_attempt_at <= now()
@@ -65,7 +65,7 @@ class OutboundRepository(private val jdbc: JdbcClient) {
             RETURNING o.id, o.tenant_id, o.idempotency_key, o.to_phone, o.body, o.attempts
             """,
         )
-            .param(lease.toMillis()).param(tenantId)
+            .param(workerId).param(lease.toMillis()).param(tenantId)
             .param(min(floor(available).toInt(), batchSize))
             .query { rs, _ ->
                 OutboundMessage(

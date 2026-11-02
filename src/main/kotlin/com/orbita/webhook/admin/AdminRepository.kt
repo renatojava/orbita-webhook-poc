@@ -11,6 +11,8 @@ data class Reconciliation(
     val messagesAwaitingWindow: Long,
     val orphanMessages: Long,
     val openWindows: Long,
+    val deliveriesByPod: Map<String, Long>,
+    val sendsByPod: Map<String, Long>,
     val deadLetters: Long,
     val uncertainSends: Long,
 )
@@ -64,6 +66,8 @@ class AdminRepository(private val jdbc: JdbcClient) {
                 """,
             ),
             openWindows = count("SELECT count(*) FROM reply_windows"),
+            deliveriesByPod = countByWorker("webhook_deliveries"),
+            sendsByPod = countByWorker("outbound_messages"),
             deadLetters = deliveries.getOrDefault("DEAD", 0) + outbound.getOrDefault("DEAD", 0),
             uncertainSends = outbound.getOrDefault("UNCERTAIN", 0),
         )
@@ -80,6 +84,12 @@ class AdminRepository(private val jdbc: JdbcClient) {
         ).query { rs, _ ->
             DeadLetter(rs.getString("source"), rs.getLong("id"), rs.getInt("attempts"), rs.getString("last_error"))
         }.list()
+
+    private fun countByWorker(table: String): Map<String, Long> =
+        jdbc.sql("SELECT coalesce(worker_id, '-') AS worker, count(*) FROM $table GROUP BY 1 ORDER BY 1")
+            .query { rs, _ -> rs.getString(1) to rs.getLong(2) }
+            .list()
+            .toMap()
 
     private fun count(sql: String): Long = jdbc.sql(sql).query { rs, _ -> rs.getLong(1) }.single()
 

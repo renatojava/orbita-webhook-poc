@@ -1,6 +1,14 @@
 spring:
   application:
     name: orbita-webhook-poc
+  lifecycle:
+    # On SIGTERM (rolling deploy, scale-in): stop taking work and let in-flight sends finish.
+    timeout-per-shutdown-phase: 20s
+  task:
+    scheduling:
+      shutdown:
+        await-termination: true
+        await-termination-period: 20s
   threads:
     virtual:
       enabled: true
@@ -14,7 +22,11 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
+server:
+  shutdown: graceful
+
 orbita:
+  instance-id: ${HOSTNAME:local}
   # No default on purpose: the app refuses to start without the Meta app secret.
   app-secret: ${WHATSAPP_APP_SECRET}
   inbound:

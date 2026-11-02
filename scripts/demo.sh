@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Exercises the running system the way Meta and an operator would, through real HTTP.
+# Exercises the running system the way Meta and an operator would, through real HTTP,
+# against 3 pods behind a load balancer.
 # Requires: docker compose, curl, openssl, xargs. Usage: ./scripts/demo.sh
+# Port 8080 busy? ORBITA_PORT=18080 ./scripts/demo.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BASE=http://localhost:8080
+BASE=http://localhost:${ORBITA_PORT:-8080}
 export SECRET="${WHATSAPP_APP_SECRET:-dev-only-secret}" BASE
 export PHONE_A=100200300400500 PHONE_B=100200300400600
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
@@ -16,6 +18,9 @@ wait_for() { # description, sql condition returning t
   local i; for i in $(seq 1 120); do [ "$(sql "SELECT $2")" = t ] && return 0; sleep 0.5; done
   echo "TIMEOUT waiting for: $1"; return 1
 }
+wait_pods() { local p; for p in app1 app2 app3; do
+  until docker compose logs "$p" 2>/dev/null | grep -q 'Started Application'; do sleep 1; done; done; }
+by_pod() { sql "SELECT coalesce(worker_id, '-') || '=' || count(*) FROM $1 GROUP BY worker_id ORDER BY 1" | paste -sd' '; }
 wait_up() { until curl -fsS -o /dev/null -X PUT "$BASE/internal/tenants/tenant-a" -H 'Content-Type: application/json' \
   -d "{\"phoneNumberId\":\"$PHONE_A\",\"sendRatePerSecond\":1000,\"sendBurst\":1000}" 2>/dev/null; do sleep 1; done; }
 
@@ -31,9 +36,10 @@ post_message() { # wamid, phone, optional contact -> prints http status
 }
 export -f body_for post_message
 
-title "Subindo Postgres e aplicacao"
+title "Subindo Postgres, migracao, 3 pods e o balanceador"
 docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 docker compose up -d --build >/dev/null 2>&1
+wait_pods
 wait_up
 curl -fsS -X PUT "$BASE/internal/tenants/tenant-b" -H 'Content-Type: application/json' \
   -d "{\"phoneNumberId\":\"$PHONE_B\",\"sendRatePerSecond\":50,\"sendBurst\":50}"
@@ -46,6 +52,7 @@ wait_for "resposta enviada" "count(*) = 1 FROM outbound_messages WHERE status = 
 echo "registros no historico: $(sql "SELECT count(*) FROM messages WHERE wamid = 'wamid.ORBITA-TESTE-0001'")"
 echo "respostas automaticas:  $(sql "SELECT count(*) FROM outbound_messages")"
 echo "duplicatas descartadas: $(sql "SELECT sum(duplicate_messages) FROM webhook_deliveries")"
+echo "entregas por pod:       $(by_pod webhook_deliveries)"
 
 title "2. Assinatura invalida"
 echo "HTTP $(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/webhooks/whatsapp" -H 'X-Hub-Signature-256: sha256=00' -d '{}')"
@@ -68,15 +75,18 @@ post_message wamid.CLIENTE-B "$PHONE_B" >/dev/null
 wait_for "resposta do cliente B" "count(*) = 1 FROM outbound_messages WHERE tenant_id = 'tenant-b' AND status = 'SENT'"
 echo "resposta do cliente B enviada em $(( ($(date +%s%N) - start) / 1000000 )) ms (inclui a janela de agrupamento de 2 s)"
 echo "campanha do cliente A ainda pendente: $(sql "SELECT count(*) FROM outbound_messages WHERE tenant_id = 'tenant-a' AND status = 'PENDING'")"
+sleep 10
+echo "cliente A nos ultimos 10 s, somando os 3 pods: $(sql "SELECT count(*) FROM outbound_messages WHERE tenant_id = 'tenant-a' AND sent_at > now() - interval '10 seconds'") envios (limite: 50/s, ou seja ~500)"
+echo "quem enviou: $(sql "SELECT worker_id || '=' || count(*) FROM outbound_messages WHERE tenant_id = 'tenant-a' AND sent_at > now() - interval '10 seconds' GROUP BY worker_id ORDER BY 1" | paste -sd' ')"
 
-title "4. kill -9 no meio do trafego"
+title "4. kill -9 em 1 dos 3 pods no meio do trafego"
 sql "DELETE FROM outbound_messages WHERE idempotency_key LIKE 'campaign:%'" >/dev/null
 ( seq 3000 | xargs -P 20 -I{} bash -c 's=$(post_message wamid.CRASH-{} "$PHONE_A"); [ "$s" = 200 ] && echo wamid.CRASH-{}' > "$WORK/accepted.txt" ) &
 sender=$!
 sleep 1.5
-docker compose kill -s SIGKILL app >/dev/null 2>&1
+docker compose kill -s SIGKILL app2 >/dev/null 2>&1
 wait "$sender" || true
-docker compose up -d app >/dev/null 2>&1
+docker compose up -d app2 >/dev/null 2>&1
 wait_up
 wait_for "fila vazia" "count(*) FILTER (WHERE status NOT IN ('DONE', 'DEAD')) = 0 FROM webhook_deliveries"
 wait_for "janelas fechadas" "count(*) = 0 FROM reply_windows"
@@ -86,6 +96,7 @@ sort "$WORK/accepted.txt" > "$WORK/accepted.sorted"
 echo "enviadas: 3000; aceitas com 200 antes da queda: $(wc -l < "$WORK/accepted.sorted") (as recusadas a Meta reenvia)"
 echo "aceitas e NAO gravadas:         $(comm -23 "$WORK/accepted.sorted" "$WORK/recorded.txt" | wc -l)"
 echo "envios incertos sinalizados:    $(sql "SELECT count(*) FROM outbound_messages WHERE status = 'UNCERTAIN'")"
+echo "entregas por pod:               $(by_pod webhook_deliveries)"
 
 title "5. Banco fora do ar: responde 503 e a Meta reenvia"
 docker compose stop postgres >/dev/null 2>&1

@@ -16,11 +16,11 @@ class DeliveryRepository(private val jdbc: JdbcClient) {
      * never reaches the failure path, so counting later would let it crash-loop forever.
      * SKIP LOCKED lets any number of workers or replicas claim without overlapping.
      */
-    fun claim(batchSize: Int, lease: Duration): List<Delivery> =
+    fun claim(batchSize: Int, lease: Duration, workerId: String): List<Delivery> =
         jdbc.sql(
             """
             UPDATE webhook_deliveries d
-               SET status = 'PROCESSING', attempts = d.attempts + 1,
+               SET status = 'PROCESSING', attempts = d.attempts + 1, worker_id = ?,
                    locked_until = now() + (? * interval '1 millisecond')
               FROM (SELECT id FROM webhook_deliveries
                      WHERE (status = 'PENDING' AND next_attempt_at <= now())
@@ -30,6 +30,7 @@ class DeliveryRepository(private val jdbc: JdbcClient) {
             RETURNING d.id, d.raw_body, d.attempts
             """,
         )
+            .param(workerId)
             .param(lease.toMillis())
             .param(batchSize)
             .query { rs, _ -> Delivery(rs.getLong("id"), rs.getBytes("raw_body"), rs.getInt("attempts")) }

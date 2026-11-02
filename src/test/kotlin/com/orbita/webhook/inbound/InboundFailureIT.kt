@@ -96,7 +96,7 @@ class InboundFailureIT : IntegrationTestBase() {
         val claimed = Executors.newVirtualThreadPerTaskExecutor().use { pool ->
             (1..8).map {
                 pool.submit<List<Long>> {
-                    (1..5).flatMap { deliveries.claim(10, Duration.ofMinutes(5)).map(Delivery::id) }
+                    (1..5).flatMap { deliveries.claim(10, Duration.ofMinutes(5), "test").map(Delivery::id) }
                 }
             }.flatMap { it.get() }
         }

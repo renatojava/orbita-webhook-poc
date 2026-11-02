@@ -10,6 +10,8 @@ data class OrbitaProperties(
     val outbound: QueueProperties,
     val gateway: GatewayProperties,
     val replyWindow: ReplyWindowProperties,
+    /** Identifies this pod in the work it records. In Kubernetes, HOSTNAME is the pod name. */
+    val instanceId: String = "local",
 ) {
     init {
         require(appSecret.isNotBlank()) { "orbita.app-secret must not be blank" }

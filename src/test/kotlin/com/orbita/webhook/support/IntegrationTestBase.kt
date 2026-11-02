@@ -1,14 +1,12 @@
 package com.orbita.webhook.support
 
+import com.orbita.testsupport.RecordingGatewayConfig
 import com.orbita.webhook.outbound.WhatsAppGateway
 import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
-import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
-import org.springframework.context.annotation.Primary
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -27,15 +25,8 @@ import javax.crypto.spec.SecretKeySpec
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Import(IntegrationTestBase.GatewayConfig::class)
+@Import(RecordingGatewayConfig::class)
 abstract class IntegrationTestBase {
-
-    @TestConfiguration
-    class GatewayConfig {
-        @Bean
-        @Primary
-        fun recordingGateway(): WhatsAppGateway = RecordingGateway()
-    }
 
     @LocalServerPort
     protected var port: Int = 0

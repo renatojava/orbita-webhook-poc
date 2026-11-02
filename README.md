@@ -8,12 +8,61 @@ e 2 (fila que trava e mensagens sem registro).
 Precisa só de Docker. Para rodar os testes, também Java 25.
 
 ```bash
-./mvnw verify          # 38 testes, 34 deles com Postgres real (Testcontainers) e HTTP real
-./scripts/demo.sh      # sobe tudo e executa os cenários da demo, incluindo kill -9
+./mvnw verify          # 40 testes, 36 deles com Postgres real (Testcontainers) e HTTP real
+./scripts/demo.sh      # sobe 3 pods + balanceador e executa a demo, incluindo kill -9 em um pod
 docker compose down -v # limpa o ambiente
 ```
 
-Para subir sem a demo: `docker compose up --build`. A aplicação fica em `localhost:8080`.
+Para subir sem a demo: `docker compose up --build`. O balanceador fica em `localhost:8080`
+(porta ocupada? `ORBITA_PORT=18080 ./scripts/demo.sh`).
+
+## Arquitetura: vários pods, nenhum estado em memória
+
+```
+                    ┌──────────── nginx (no Kubernetes: Service / ALB) ────────────┐
+Meta ── POST ──────▶│      app1            app2            app3      (mesma imagem)│
+                    └────────┬────────────────┬────────────────┬───────────────────┘
+                             │  webhook + workers em todos os pods │
+                             ▼                ▼                ▼
+                    ┌──────────────────── Postgres ────────────────────────────────┐
+                    │ fila · histórico · janelas · outbox · bucket de envio · leases│
+                    └───────────────────────────────────────────────────────────────┘
+       migrate (Job/initContainer): aplica o schema uma vez, antes de os pods subirem
+```
+
+- **Os pods não conversam entre si nem guardam estado.** Toda a coordenação passa pelo Postgres:
+  `SKIP LOCKED` divide a fila, a trava na linha do cliente faz o limite valer para o cliente e não por pod,
+  e o relógio usado é sempre o `now()` do banco, nunca o do pod.
+- **Matar um pod não perde nada.** O que ele estava processando volta para a fila quando o lease expira,
+  e outro pod termina.
+- **Escalar é subir réplicas.** Nada muda no código. O limite real é a soma dos pools de conexão:
+  N pods × pool tem de caber no `max_connections` do banco (com muitos pods, usar RDS Proxy ou PgBouncer).
+- **Migração é um passo separado.** Na primeira tentativa, deixei cada pod migrar ao subir. Com 3 pods
+  subindo juntos num banco vazio, o Liquibase falhou ao criar as próprias tabelas de controle.
+  Por isso o mesmo jar roda em modo migração (`--orbita.workers.enabled=false`, sem servidor web) antes
+  dos pods, e os pods sobem com `SPRING_LIQUIBASE_ENABLED=false`.
+- **Desligamento gracioso.** No SIGTERM de um rollout, o pod para de pegar trabalho e espera os envios
+  em andamento (até 20 s).
+- **Única variável em memória:** `inFlight` no `OutboundDispatcher`, que evita que o mesmo pod sirva
+  o mesmo cliente duas vezes ao mesmo tempo. É só um atalho local. A correção vem das travas no banco.
+
+## Onde está a idempotência
+
+Tudo no banco, com `UNIQUE` e `ON CONFLICT`. Nada de "verifica e depois grava" nem de cache em memória,
+porque com vários pods só o banco consegue decidir quem chegou primeiro.
+
+| Camada | O que garante | Onde |
+|---|---|---|
+| Histórico | O mesmo `id` de mensagem vira um único registro, mesmo com 50 reenvios simultâneos | `UNIQUE (tenant_id, wamid)` em `001-pipeline-schema.sql:43` + `ON CONFLICT DO NOTHING` em `DeliveryProcessor.kt:54` |
+| Efeito colateral | Só mensagem nova abre ou estende a janela de resposta. Duplicata não faz nada | `if (inserted)` em `DeliveryProcessor.kt:61` |
+| Resposta automática | Uma resposta por lote de mensagens, nunca duas | Chave `auto-reply:<wamid>` em `ReplyWindowCloser.kt:23` + `UNIQUE (tenant_id, idempotency_key)` em `001-pipeline-schema.sql:64` + `ON CONFLICT` em `OutboundRepository.kt:18` |
+| Vínculo mensagem → resposta | Cada mensagem pertence a uma única resposta | `messages.reply_key`, gravado em `ReplyWindowRepository.kt:53` |
+| Fila | Dois pods nunca pegam a mesma entrega ao mesmo tempo | `FOR UPDATE SKIP LOCKED` em `DeliveryRepository.kt:28` |
+| Pod que perdeu o lease | Não sobrescreve o resultado de quem retomou o trabalho | `attempts = ?` (fencing) em `DeliveryRepository.kt:61` |
+| Envio para a Meta | Resultado incerto não é reenviado | `flagExpiredSendsAsUncertain` em `OutboundRepository.kt:91` |
+| Limite de envio | O limite vale para o cliente, somando todos os pods | `FOR UPDATE` na linha do cliente em `OutboundRepository.kt:52` |
+
+As 3 primeiras camadas rodam na mesma transação, junto com o status da entrega.
 
 ## O fluxo
 
@@ -44,6 +93,7 @@ Meta → POST /webhooks/whatsapp → valida HMAC → grava em webhook_deliveries
 | **Teto de espera (20 s) na janela** | Quem não para de digitar também é respondido | A resposta pode sair no meio do raciocínio da pessoa |
 | **Limite por cliente com token bucket no Postgres** | Vale para qualquer número de réplicas e é configurável por cliente | Uma trava curta na linha do cliente a cada lote |
 | **Cada cliente com seu lote e sua thread virtual** | Campanha grande ou envio lento só atrasam o próprio cliente. Respostas passam à frente das campanhas | Nenhum relevante nesta escala |
+| **Pods sem estado, coordenados pelo Postgres** | Qualquer pod atende qualquer requisição e qualquer trabalho. Escalar ou matar um pod não exige nada além de subir ou derrubar a réplica | O banco vira o ponto central: precisa de alta disponibilidade (Multi-AZ) e de conexões dimensionadas |
 | **Kotlin** | É a linguagem que domino, e o desafio deixa livre | O produto é Node. Os mecanismos acima são SQL e valem em TypeScript, mas este código não entra direto lá |
 
 ## O limite honesto: envio único não existe
@@ -63,7 +113,10 @@ da Meta confirmaria esses casos sozinho.
 | Corpo que nunca processa, ou número desconhecido | Vai para `DEAD` após N tentativas com backoff, com replay | `InboundFailureIT` |
 | Falha no meio de um lote | Nada gravado pela metade | `InboundFailureIT` |
 | Worker morto | Trabalho retomado quando o lease expira, com limite de tentativas | `InboundFailureIT` |
-| `kill -9` real com tráfego | 3.000 enviadas, 1.690 aceitas, **0 aceitas perdidas** | demo |
+| 3 pods dividindo 1.500 mensagens, com 1 pod derrubado no meio | Todos os pods trabalharam, 1.500 registros, 1.500 respostas, 0 duplicatas | `MultiPodIT` |
+| Limite de 30/s com 3 pods | 98 envios em ~3 s para um limite de 100: o limite é do cliente, não do pod | `MultiPodIT` |
+| `kill -9` real em 1 de 3 pods, com tráfego pelo balanceador | 3.000 enviadas, 2.988 aceitas (o nginx desviou para os outros pods), **0 aceitas perdidas** | demo |
+| Campanha de 50/s com 3 pods | 501 envios em 10 s, divididos entre os 3 pods | demo |
 | Banco fora do ar | 503, e o reenvio é gravado uma vez | demo |
 | 3 mensagens seguidas da mesma pessoa | 1 resposta ligada às 3 | `ReplyWindowIT` e demo |
 | Pessoa que não para de digitar | Respondida no teto de espera | `ReplyWindowIT` |
@@ -76,7 +129,8 @@ da Meta confirmaria esses casos sozinho.
 
 Também sabotei cópias do código para confirmar que os testes falham quando deveriam. Sem `UNIQUE` e
 `ON CONFLICT`, sem rate limit, sem isolamento entre clientes, com janela que não desliza, sem teto de espera
-e com duplicata adiando a janela, os testes correspondentes ficaram vermelhos.
+e com duplicata adiando a janela, os testes correspondentes ficaram vermelhos. Sem a trava na linha do
+cliente, os 3 pods enviaram 261 e 277 mensagens para um limite de 100, e o `MultiPodIT` reprovou.
 
 **Limites dessas medições:** rodaram em um notebook, com o gerador de carga na mesma JVM, o envio à Meta
 simulado e a janela de 300 ms do perfil de teste. A latência medida é a da resposta HTTP, não a da resposta ao lead. Isso indica que o desenho aguenta a carga, mas não é o teste

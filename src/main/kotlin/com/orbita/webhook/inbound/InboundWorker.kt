@@ -14,6 +14,7 @@ class InboundWorker(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val config = properties.inbound
+    private val workerId = properties.instanceId
 
     @Scheduled(fixedDelayString = "\${orbita.inbound.poll-interval}")
     fun drain() {
@@ -21,7 +22,7 @@ class InboundWorker(
             if (buried > 0) log.error("{} deliveries moved to dead letter after losing their last lease", buried)
         }
         do {
-            val batch = deliveries.claim(config.batchSize, config.lease)
+            val batch = deliveries.claim(config.batchSize, config.lease, workerId)
             batch.forEach(::handle)
         } while (batch.size == config.batchSize)
     }

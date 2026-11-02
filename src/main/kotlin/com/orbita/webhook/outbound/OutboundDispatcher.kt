@@ -11,8 +11,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
- * Each tenant is served on its own virtual thread and has at most one batch in flight.
+ * Each tenant is served on its own virtual thread and has at most one batch in flight per pod.
  * A tenant with a huge campaign or a slow send only ever waits on itself.
+ * inFlight is only a local shortcut; correctness across pods comes from row locks in Postgres.
  */
 @Component
 class OutboundDispatcher(
@@ -22,6 +23,7 @@ class OutboundDispatcher(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val config = properties.outbound
+    private val workerId = properties.instanceId
     private val executor = Executors.newVirtualThreadPerTaskExecutor()
     private val inFlight = ConcurrentHashMap.newKeySet<String>()
 
@@ -37,7 +39,7 @@ class OutboundDispatcher(
 
     private fun serve(tenantId: String) {
         try {
-            val batch = outbound.claimWithinRateLimit(tenantId, config.batchSize, config.lease)
+            val batch = outbound.claimWithinRateLimit(tenantId, config.batchSize, config.lease, workerId)
             executor.invokeAll(batch.map { message -> Callable { send(message) } })
         } catch (e: Exception) {
             log.error("Dispatch failed for tenant {}", tenantId, e)
