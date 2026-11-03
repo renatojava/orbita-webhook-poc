@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plano Órbita CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: coluna única de leitura, cada problema é um bloco problema → causa → solução → prova */
+  --bg:#f4f6f8; --surface:#ffffff; --ink:#16202b; --muted:#56657a; --line:#d9e0e8;
+  --accent:#1f5fbf; --accent-soft:#e3ecfa;
+  --ok:#1d7a4c; --ok-soft:#e1f3e9; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b3261e; --bad-soft:#fbe4e2;
+  --display:"Fraunces", Georgia, serif; --body:"Source Sans 3", "Segoe UI", Arial, sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f141a; --surface:#18202a; --ink:#e6ecf2; --muted:#9aa8b8; --line:#2b3644;
+    --accent:#7aa8ef; --accent-soft:#1d2c44;
+    --ok:#6fd19c; --ok-soft:#173226; --warn:#f0b35a; --warn-soft:#3a2a12; --bad:#f08a82; --bad-soft:#3d1c1a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f141a; --surface:#18202a; --ink:#e6ecf2; --muted:#9aa8b8; --line:#2b3644;
+  --accent:#7aa8ef; --accent-soft:#1d2c44;
+  --ok:#6fd19c; --ok-soft:#173226; --warn:#f0b35a; --warn-soft:#3a2a12; --bad:#f08a82; --bad-soft:#3d1c1a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 var(--body)}
+main{max-width:880px;margin:0 auto;padding:32px 20px 80px;display:grid;gap:44px}
+h1,h2,h3{font-family:var(--display);line-height:1.2;text-wrap:balance;margin:0}
+h1{font-size:2.1rem}
+h2{font-size:1.55rem;padding-bottom:8px;border-bottom:2px solid var(--line)}
+h3{font-size:1.15rem}
+p{margin:0}
+section{display:grid;gap:16px}
+.lead{font-size:1.15rem;color:var(--muted)}
+.big{background:var(--accent-soft);border-left:5px solid var(--accent);padding:18px 20px;border-radius:6px;font-size:1.2rem;font-weight:600}
+.nav{display:flex;flex-wrap:wrap;gap:8px}
+.nav a{color:var(--accent);text-decoration:none;border:1px solid var(--line);background:var(--surface);padding:5px 12px;border-radius:999px;font-size:.92rem}
+.nav a:hover,.nav a:focus-visible{border-color:var(--accent);outline:none}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px;display:grid;gap:10px}
+.prob{display:grid;gap:10px}
+.row{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:start}
+.tag{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:4px;text-align:center}
+.t-prob{background:var(--bad-soft);color:var(--bad)}
+.t-why{background:var(--warn-soft);color:var(--warn)}
+.t-fix{background:var(--ok-soft);color:var(--ok)}
+.t-proof{background:var(--accent-soft);color:var(--accent)}
+.num{font-family:var(--display);color:var(--accent);font-size:1.5rem}
+.timeline{display:grid;gap:0;border-left:3px solid var(--line);margin-left:8px}
+.step{position:relative;padding:0 0 20px 22px;display:grid;gap:4px}
+.step::before{content:"";position:absolute;left:-9px;top:5px;width:15px;height:15px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}
+.step.gate::before{border-color:var(--warn);background:var(--warn)}
+.step.event::before{border-color:var(--ok);background:var(--ok)}
+.when{font-weight:700;color:var(--muted);font-size:.9rem;text-transform:uppercase;letter-spacing:.04em}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;background:var(--surface);font-variant-numeric:tabular-nums}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:.85rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+td.n,th.n{text-align:right}
+tr.total td{font-weight:700;border-top:2px solid var(--ink)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:4px}
+.tile b{font-family:var(--display);font-size:1.6rem}
+.tile span{color:var(--muted);font-size:.95rem}
+ol.decisions{margin:0;padding-left:22px;display:grid;gap:10px}
+details{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+details[open]{padding-bottom:16px}
+summary{cursor:pointer;font-weight:700}
+summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+details p{margin-top:8px}
+.say{font-style:italic;border-left:3px solid var(--accent);padding-left:12px;color:var(--ink)}
+.muted{color:var(--muted)}
+.agenda{display:grid;gap:10px}
+.ag{display:grid;grid-template-columns:70px 1fr;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.ag .min{font-family:var(--display);font-size:1.3rem;color:var(--accent)}
+@media (max-width:560px){.row{grid-template-columns:1fr}.tag{justify-self:start}.ag{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+
+<header style="display:grid;gap:14px">
+  <h1>Plano Órbita CRM: como salvar o lançamento</h1>
+  <p class="lead">Explicação direta do que vou defender ao board: os problemas, a causa de cada um, como resolvo e como provo.</p>
+  <p class="big">A ideia toda em uma frase: o evento é o que dá dinheiro hoje (R$ 6,3 milhões passam pelo CRM). Primeiro garanto o evento; vender o CRM para o público vem depois, aos poucos.</p>
+  <nav class="nav" aria-label="Seções">
+    <a href="#problemas">Os 6 problemas</a><a href="#tempo">O plano no tempo</a><a href="#dinheiro">Dinheiro</a><a href="#decisoes">O que peço ao board</a><a href="#roteiro">Roteiro dos 30 min</a><a href="#perguntas">Perguntas difíceis</a>
+  </nav>
+</header>
+
+<section id="situacao">
+  <h2>A situação em números</h2>
+  <div class="tiles">
+    <div class="tile"><b>45 dias</b><span>até a Semana do Closer, quando o CEO prometeu abrir o CRM para todos</span></div>
+    <div class="tile"><b>R$ 6,3 mi</b><span>vendas do evento que passam pelo WhatsApp dentro do CRM (70% de R$ 9 mi)</span></div>
+    <div class="tile"><b>25 msg/s</b><span>pico esperado no evento. Hoje é menos de 1 por segundo</span></div>
+    <div class="tile"><b>R$ 665 mil</b><span>já gastos numa versão 1 orçada em R$ 570 mil, com 40% do escopo faltando</span></div>
+  </div>
+  <p>A causa por trás de quase tudo: <b>ninguém na Órbita era dono técnico do produto</b>. O fornecedor fazia, ninguém revisava, e as prioridades chegavam por WhatsApp de vários diretores.</p>
+</section>
+
+<section id="problemas">
+  <h2>Os 6 problemas e como resolvo cada um</h2>
+
+  <article class="card prob">
+    <h3><span class="num">1</span> Mensagens duplicadas</h3>
+    <div class="row"><span class="tag t-prob">Problema</span><p>3% das mensagens aparecem duas vezes; lead recebeu a mesma resposta automática duas vezes.</p></div>
+    <div class="row"><span class="tag t-why">Por quê</span><p>O sistema faz todo o trabalho enquanto a Meta espera a resposta. Demora, a Meta acha que falhou e manda de novo. O sistema não confere se já recebeu aquela mensagem.</p></div>
+    <div class="row"><span class="tag t-fix">Solução</span><p>Responder 200 na hora e só guardar o evento numa fila. O banco tem uma regra: o mesmo id de mensagem só pode existir uma vez (<code>UNIQUE</code> + <code>ON CONFLICT DO NOTHING</code>). Se chegar de novo, é ignorado. A resposta automática também tem chave única, então nunca sai duas vezes.</p></div>
+    <div class="row"><span class="tag t-proof">Prova</span><p>Teste que dispara 50 requisições iguais ao mesmo tempo: fica 1 registro e 1 resposta. Está no repositório.</p></div>
+  </article>
+
+  <article class="card prob">
+    <h3><span class="num">2</span> Fila que trava e mensagem que some</h3>
+    <div class="row"><span class="tag t-prob">Problema</span><p>Uma campanha de 20 mil contatos travou tudo por 40 minutos; 1,8% das mensagens sumiram do histórico e ninguém sabe quais.</p></div>
+    <div class="row"><span class="tag t-why">Por quê</span><p>Uma fila só para todos os clientes: a campanha grande de um entope a fila dos outros. E a mensagem é enviada sem antes ser gravada; se der erro no meio, some sem rastro.</p></div>
+    <div class="row"><span class="tag t-fix">Solução</span><p>Gravar a mensagem no banco <b>antes</b> de enviar (se cair no meio, ela continua lá). Quem falha tenta de novo esperando cada vez mais (1 s, 2 s, 4 s, 8 s) e, depois de 5 tentativas, vai para uma <b>fila de falhas</b> visível, que dá para reprocessar. Cada cliente tem um limite de envios por segundo, então a campanha de um não trava os outros.</p></div>
+    <div class="row"><span class="tag t-proof">Prova</span><p>Na demo: derrubo um dos 3 servidores no meio do envio e nada se perde. A campanha de 1.000 do cliente A não atrasa o cliente B. Um relatório de conferência mostra zero mensagens sem registro.</p></div>
+  </article>
+
+  <article class="card prob">
+    <h3><span class="num">3</span> Custo de IA fora de controle</h3>
+    <div class="row"><span class="tag t-prob">Problema</span><p>R$ 28 mil num mês, 4 vezes o previsto. Um único cliente gastou 22%.</p></div>
+    <div class="row"><span class="tag t-why">Por quê</span><p>Não existe limite por cliente. Esse cliente custa uns R$ 6 mil por mês de IA, e o plano mais caro (Scale) custa R$ 1.497. A Órbita paga para ele usar.</p></div>
+    <div class="row"><span class="tag t-fix">Solução</span><p>Teto de gasto de IA por cliente por mês, igual ao limite de envio que já fiz na PoC. Passou do teto, a IA para e um vendedor assume. Um botão para desligar a IA no evento, se precisar.</p></div>
+    <div class="row"><span class="tag t-proof">Prova</span><p>Painel de custo de IA por cliente por dia, acompanhado toda semana.</p></div>
+  </article>
+
+  <article class="card prob">
+    <h3><span class="num">4</span> Fornecedor sem previsibilidade</h3>
+    <div class="row"><span class="tag t-prob">Problema</span><p>Entrega oscila de 14 a 31 pontos por sprint, código entra sem revisão e só 2 devs (que saíram) entendiam as automações.</p></div>
+    <div class="row"><span class="tag t-why">Por quê</span><p>Contrato por hora: se o trabalho sai errado e precisa ser refeito, a Órbita paga de novo. Ninguém de dentro revisava nada.</p></div>
+    <div class="row"><span class="tag t-fix">Solução</span><p><b>Não trocar agora</b>: trocar exige 1 a 2 meses pagando os dois times, bem na hora do evento. <b>Renegociar já</b>: entrega por escopo fechado, revisão de código obrigatória por alguém da Órbita, documentar as automações, código e contas no nome da Órbita. Depois do evento, contratar time próprio e reduzir a Ponte aos poucos.</p></div>
+    <div class="row"><span class="tag t-proof">Prova</span><p>Pontos entregues por sprint ficam estáveis; nenhum merge sem revisão.</p></div>
+  </article>
+
+  <article class="card prob">
+    <h3><span class="num">5</span> UX e código desalinhados</h3>
+    <div class="row"><span class="tag t-prob">Problema</span><p>30% das telas saem diferentes do design e 20% das horas vão para refazer.</p></div>
+    <div class="row"><span class="tag t-why">Por quê</span><p>O estúdio só vê a tela pronta na homologação, quando já custou caro.</p></div>
+    <div class="row"><span class="tag t-fix">Solução</span><p>Uma biblioteca de componentes única (botão, campo, tabela iguais em toda tela) e o designer aprova a tela <b>antes</b> do código entrar, não depois.</p></div>
+    <div class="row"><span class="tag t-proof">Prova</span><p>Percentual de horas de retrabalho de tela caindo mês a mês.</p></div>
+  </article>
+
+  <article class="card prob">
+    <h3><span class="num">6</span> Governança por urgência</h3>
+    <div class="row"><span class="tag t-prob">Problema</span><p>11 itens "urgentes" ao mesmo tempo, pedidos por WhatsApp de diretores diferentes.</p></div>
+    <div class="row"><span class="tag t-why">Por quê</span><p>Não existe uma lista única nem um dono da prioridade.</p></div>
+    <div class="row"><span class="tag t-fix">Solução</span><p>Uma lista única de pedidos, um canal só, e o COO como dono da ordem. Reunião semanal de prioridade. Só pode existir 1 urgente por vez.</p></div>
+    <div class="row"><span class="tag t-proof">Prova</span><p>O COO recebe toda semana um relatório com 5 números que ele consegue cobrar.</p></div>
+  </article>
+</section>
+
+<section id="tempo">
+  <h2>O plano no tempo</h2>
+  <div class="timeline">
+    <div class="step"><span class="when">Semana 1</span><p><b>Descobrir o que não sei.</b> Ler o código e o contrato da Ponte, conferir se código e contas AWS/Meta estão no nome da Órbita, rodar um teste de carga no sistema atual, entender como os 60 vendedores atendiam antes do CRM (esse é o plano B).</p></div>
+    <div class="step"><span class="when">Dias 1 a 35</span><p><b>Arrumar só o que o evento precisa.</b> Entra: inbox, distribuição das conversas entre os vendedores, histórico confiável (a PoC), limite por cliente, funil básico, IA com teto. Sai: a maior parte das 25 funcionalidades que faltam; automações ficam congeladas para clientes de fora.</p></div>
+    <div class="step gate"><span class="when">10 dias antes do evento: decisão</span><p><b>Teste de carga com o dobro do pico (50 msg/s).</b> Passou sem perder nem duplicar mensagem: evento no CRM. Não passou: plano B, o evento roda do jeito antigo e o CRM fica para depois. A decisão é por um número, não por opinião.</p></div>
+    <div class="step event"><span class="when">Semana do Closer</span><p><b>Os 60 vendedores operam no CRM.</b> O "aberto a todos" vira lista de espera com entrada em ondas (por exemplo 50 clientes por dia). O CEO cumpre o anúncio sem colocar o evento em risco.</p></div>
+    <div class="step"><span class="when">De 90 a 180 dias</span><p><b>Trazer o produto para dentro.</b> Contratar 2 devs seniores, 1 SRE e 1 QA; reduzir a Ponte de 6 para 3 devs; no mês 5, decidir se a Ponte continua só em partes menores ou sai.</p></div>
+  </div>
+</section>
+
+<section id="dinheiro">
+  <h2>Dinheiro</h2>
+  <p>O board aprovou <b>R$ 1,2 milhão para 6 meses</b>, ou seja R$ 200 mil por mês. Hoje já se gastam R$ 162 mil por mês. <b>Sobram só R$ 38 mil por mês</b> para contratar. Por isso o plano corta UX e IA e reduz a Ponte depois do evento.</p>
+  <div class="wrap">
+  <table>
+    <thead><tr><th>Item (R$ mil)</th><th class="n">M1</th><th class="n">M2</th><th class="n">M3</th><th class="n">M4</th><th class="n">M5</th><th class="n">M6</th><th class="n">Total</th></tr></thead>
+    <tbody>
+      <tr><td>Ponte (renegociada, depois reduzida)</td><td class="n">95</td><td class="n">95</td><td class="n">95</td><td class="n">70</td><td class="n">50</td><td class="n">50</td><td class="n">455</td></tr>
+      <tr><td>Estúdio de UX (reduzido de 25)</td><td class="n">15</td><td class="n">15</td><td class="n">15</td><td class="n">15</td><td class="n">15</td><td class="n">15</td><td class="n">90</td></tr>
+      <tr><td>AWS (mais no mês do evento)</td><td class="n">16</td><td class="n">20</td><td class="n">16</td><td class="n">16</td><td class="n">16</td><td class="n">16</td><td class="n">100</td></tr>
+      <tr><td>IA com teto (era 28)</td><td class="n">15</td><td class="n">15</td><td class="n">12</td><td class="n">12</td><td class="n">12</td><td class="n">12</td><td class="n">78</td></tr>
+      <tr><td>Contratações (SRE + QA, depois 2 seniores)</td><td class="n">33</td><td class="n">55</td><td class="n">77</td><td class="n">77</td><td class="n">77</td><td class="n">77</td><td class="n">396</td></tr>
+      <tr class="total"><td>Total</td><td class="n">174</td><td class="n">200</td><td class="n">215</td><td class="n">190</td><td class="n">170</td><td class="n">170</td><td class="n">1.119</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Sobra uma reserva de uns R$ 80 mil (7%) para imprevistos. M3 passa de 200 porque a Ponte e o time novo convivem; os meses seguintes compensam.</p>
+
+  <h3>Quanto o CRM pode faturar</h3>
+  <p>A meta do CEO é 300 clientes no evento e 800 em 12 meses. Com 5% dos clientes cancelando todo mês, chegar a 800 exige <b>73 clientes novos por mês, todo mês</b>. Por isso mostro três cenários:</p>
+  <div class="wrap">
+  <table>
+    <thead><tr><th>Cenário</th><th class="n">Clientes no evento</th><th class="n">Novos por mês</th><th class="n">Clientes no mês 12</th><th class="n">Faturamento mensal no mês 12</th></tr></thead>
+    <tbody>
+      <tr><td>Pessimista</td><td class="n">75</td><td class="n">25</td><td class="n">~260</td><td class="n">~R$ 129 mil</td></tr>
+      <tr><td>Base (o que eu defendo)</td><td class="n">150</td><td class="n">40</td><td class="n">~430</td><td class="n">~R$ 214 mil</td></tr>
+      <tr><td>Meta do CEO</td><td class="n">300</td><td class="n">73</td><td class="n">800</td><td class="n">~R$ 398 mil</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Premissas que declaro em voz alta: ticket médio de R$ 497; sobra uns R$ 385 por cliente depois de servidor, IA com teto e suporte; custo fixo de uns R$ 120 mil por mês depois dos 6 meses; o custo de hoje só se paga a partir de uns 326 clientes.</p>
+  <p class="big">Quanto custa errar: se o CRM cair no evento e perder só 10% das vendas, são R$ 630 mil, metade do orçamento do semestre. Proteger o evento é o retorno mais certo do plano. Vender o CRM ao público é uma aposta que, no cenário base, se paga em mais de 2 anos.</p>
+</section>
+
+<section id="decisoes">
+  <h2>O que peço ao board decidir hoje</h2>
+  <ol class="decisions">
+    <li><b>Evento no CRM; "aberto a todos" vira lista de espera com entrada em ondas.</b></li>
+    <li><b>Orçamento reorganizado:</b> contratar SRE e QA já, e teto de gasto de IA por cliente.</li>
+    <li><b>Renegociar a Ponte agora</b>, sem trocar antes do evento.</li>
+    <li><b>Decisão por teste de carga 10 dias antes do evento</b>, com plano B pronto.</li>
+    <li><b>Uma lista de prioridades, um dono (o COO), um canal.</b></li>
+  </ol>
+</section>
+
+<section id="roteiro">
+  <h2>Roteiro dos 30 minutos</h2>
+  <div class="agenda">
+    <div class="ag"><span class="min">5 min</span><div><b>Diagnóstico.</b> Os números da situação e a causa por trás: ninguém era dono técnico. O que eu ainda não sei e como descubro na semana 1.<p class="say">"Os seis problemas têm cinco causas, e a principal é que ninguém aqui era dono do produto. Agora sou eu."</p></div></div>
+    <div class="ag"><span class="min">8 min</span><div><b>Estratégia.</b> O que entra e sai dos 45 dias, a lista de espera, a decisão 10 dias antes, o plano B, o fornecedor e o time.<p class="say">"A data se cumpre. O que muda é como a porta abre: em ondas, não de uma vez."</p></div></div>
+    <div class="ag"><span class="min">5 min</span><div><b>Código e execução.</b> Demo de 2 minutos da PoC, rituais e métricas.<p class="say">"Isso é o que resolve a duplicidade e a perda. Vou mostrar funcionando."</p></div></div>
+    <div class="ag"><span class="min">7 min</span><div><b>Dinheiro.</b> A tabela dos 6 meses, os 3 cenários e o custo de errar.<p class="say">"O retorno certo é proteger R$ 6,3 milhões do evento. O produto para o público é aposta, e mostro os números dela."</p></div></div>
+    <div class="ag"><span class="min">5 min</span><div><b>Riscos e decisões.</b> O que aciona o plano B e as 5 decisões.<p class="say">"Preciso de cinco decisões hoje para começar amanhã."</p></div></div>
+  </div>
+  <p>O que dizer para cada pessoa da sala:</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Quem</th><th>A frase para ele</th></tr></thead>
+    <tbody>
+      <tr><td>CEO</td><td>A data se cumpre, com a porta abrindo em ondas.</td></tr>
+      <tr><td>COO</td><td>A causa foi estrutural, não você. Toda semana você recebe 5 números para cobrar.</td></tr>
+      <tr><td>Conselheiro financeiro</td><td>O plano cabe no R$ 1,2 mi com reserva, e mostro três cenários e o custo de errar.</td></tr>
+      <tr><td>Diretor comercial</td><td>O evento só roda no CRM se passar no teste de carga; se não passar, roda no jeito antigo. Ele não cai ao vivo.</td></tr>
+      <tr><td>Conselheiro de tecnologia</td><td>Sem reescrever o sistema, decisões com prós e contras, e código e contas no nome da Órbita.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="perguntas">
+  <h2>Perguntas difíceis que vão vir</h2>
+  <details><summary>Por que a PoC é em Kotlin se o produto é Node?</summary><p>Porque o desafio deixa a linguagem livre e é a que domino. O que resolve o problema está no banco (regra de id único, fila com trava, limite por cliente), e isso funciona igual em Node. Não proponho reescrever o sistema: portar o mecanismo para o serviço atual leva uns 2 a 3 dias.</p></details>
+  <details><summary>Por que não trocar a Ponte já?</summary><p>Trocar exige 1 a 2 meses pagando os dois times (uns R$ 95 mil a mais por mês) e o time novo não conhece o código, bem na véspera do evento. Renegociar dá controle agora; a decisão de trocar fica para depois do evento, com dados.</p></details>
+  <details><summary>E se o teste de carga falhar 10 dias antes?</summary><p>O evento roda do jeito que os vendedores atendiam antes do CRM, e o CRM continua com os 40 pilotos. Por isso a semana 1 inclui descobrir e deixar pronto esse jeito antigo.</p></details>
+  <details><summary>Os 300 clientes no evento são realistas?</summary><p>2% dos inscritos é otimista para um produto que ainda tem 40% do escopo pendente. Defendo 1% (150) como base e mostro o que seria preciso para chegar em 800: 73 clientes novos todo mês.</p></details>
+  <details><summary>Você usou IA para fazer isso?</summary><p>Sim, e o desafio pede que eu conte. Usei IA para escrever o código e conferi cada mecanismo com testes, inclusive testes que quebram o código de propósito para provar que o teste pega o erro. Esteja pronto para explicar sem ajuda por que existe o id único, o <code>SKIP LOCKED</code> da fila e a trava do limite por cliente.</p></details>
+  <details><summary>25 mensagens por segundo é muito?</summary><p>Não para um sistema bem feito: na PoC, 500 por segundo responderam em 2 ms. O problema hoje não é volume, é o desenho (trabalho dentro da requisição e fila única). O teste de carga 10 dias antes confirma isso no sistema real.</p></details>
+</section>
+
+</main>
+</body>
+</html>
